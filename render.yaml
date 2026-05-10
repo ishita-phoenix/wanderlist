@@ -1,0 +1,55 @@
+# Render Blueprint — deploy both API + Next.js web app.
+# Dashboard → New → Blueprint → Connect repo → paste path render.yaml (or commit & sync).
+
+services:
+  # ─── Django API ─────────────────────────────────────────────
+  - type: web
+    name: wanderlust-backend
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt && python manage.py migrate --noinput
+    startCommand: gunicorn wanderlust_backend.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 120
+    healthCheckPath: /api/health/
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      - key: DJANGO_DEBUG
+        value: "0"
+      # Strong secret — replace in dashboard or use Generate:
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      # Host header is validated via RENDER_EXTERNAL_URL hostname when DJANGO_ALLOWED_HOSTS is unset.
+      # Optional override: DJANGO_ALLOWED_HOSTS=your-backend.onrender.com,custom.domain.com
+      # Keep API callable from browser if you ever bypass Next (discover / direct tools):
+      - key: CORS_ALLOW_ALL_ORIGINS
+        value: "1"
+
+  # ─── Next.js (proxies /api → Django via BACKEND_URL) ─────────
+  - type: web
+    name: wanderlust-web
+    runtime: node
+    plan: free
+    rootDir: .
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: "22.12.0"
+      # Server-side rewrite target (no trailing slash). Linked from backend after first deploy.
+      - key: BACKEND_URL
+        fromService:
+          type: web
+          name: wanderlust-backend
+          envVarKey: RENDER_EXTERNAL_URL
+      # Browser calls same-origin /api (default). Do not set NEXT_PUBLIC_API_BASE_URL unless you know why.
+
+# ─── Optional persistent DB (recommended for saved lists / state) ─────────
+# Uncomment in Render dashboard: create PostgreSQL → copy Internal/External DATABASE_URL
+# into wanderlust-backend env as DATABASE_URL. Migrations run on each backend build.
+#
+# databases:
+#   - name: wanderlust-db
+#     databaseName: wanderlust
+#     user: wanderlust
