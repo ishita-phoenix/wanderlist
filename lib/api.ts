@@ -16,15 +16,19 @@ function looksLikeAppendSlashCrash(body: string): boolean {
   return body.includes("APPEND_SLASH") && body.includes("RuntimeError")
 }
 
-async function post<T>(path: string, payload: unknown, signal?: AbortSignal): Promise<T> {
+type PostOptions = { signal?: AbortSignal; token?: string }
+
+async function post<T>(path: string, payload: unknown, options?: PostOptions): Promise<T> {
   const url = resolvedApiUrl(path)
+  const headers: Record<string, string> = { "Content-Type": "application/json" }
+  if (options?.token) headers.Authorization = `Token ${options.token}`
   let res: Response
   try {
     res = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify(payload),
-      signal,
+      signal: options?.signal,
     })
   } catch {
     throw new Error(`Cannot reach the planning API (${url}). ${apiHint()}`)
@@ -495,6 +499,25 @@ export async function searchPlaces(
   return spaced.slice(0, 8)
 }
 
+export async function registerAccount(payload: {
+  email: string
+  password: string
+  name?: string
+}): Promise<{ token: string; userId: string; email: string; name: string }> {
+  return post("/auth/register/", payload)
+}
+
+export async function loginAccount(payload: {
+  email: string
+  password: string
+}): Promise<{ token: string; userId: string; email: string; name: string }> {
+  return post("/auth/login/", payload)
+}
+
+export async function logoutAccount(token: string): Promise<void> {
+  await post<{ ok: boolean }>("/auth/logout/", {}, { token })
+}
+
 export async function discoverPlaces(
   city: string,
   country: string,
@@ -527,33 +550,41 @@ export async function buildItinerary(payload: {
   return post<Itinerary>("/build/", payload)
 }
 
-export async function loadUserState(userId: string): Promise<{
+export async function loadUserState(token: string): Promise<{
   userId: string
   preferences?: TravelPreferences
   cityLists?: CityList[]
   itinerary?: Itinerary | null
 }> {
   try {
-    const res = await fetch(resolvedApiUrl(`/state/${encodeURIComponent(userId)}/`))
+    const res = await fetch(resolvedApiUrl("/state/"), {
+      headers: { Authorization: `Token ${token}` },
+    })
     if (!res.ok) {
-      return { userId, cityLists: [], itinerary: null }
+      return { userId: "", cityLists: [], itinerary: null }
     }
     return res.json()
   } catch {
-    return { userId, cityLists: [], itinerary: null }
+    return { userId: "", cityLists: [], itinerary: null }
   }
 }
 
-export async function saveUserState(payload: {
-  userId: string
-  preferences: TravelPreferences
-  cityLists: CityList[]
-  itinerary: Itinerary | null
-}): Promise<void> {
+export async function saveUserState(
+  payload: {
+    userId: string
+    preferences: TravelPreferences
+    cityLists: CityList[]
+    itinerary: Itinerary | null
+  },
+  token: string
+): Promise<void> {
   try {
-    await fetch(resolvedApiUrl(`/state/${encodeURIComponent(payload.userId)}/`), {
+    await fetch(resolvedApiUrl("/state/"), {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Token ${token}`,
+      },
       body: JSON.stringify(payload),
     })
   } catch {

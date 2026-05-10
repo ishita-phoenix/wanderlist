@@ -7,14 +7,10 @@ import { CityListView } from "@/components/city-list-view"
 import { DiscoverPage } from "@/components/discover-page"
 import { BuildItinerary } from "@/components/build-itinerary"
 import { ItineraryView } from "@/components/itinerary-view"
+import { LoginScreen } from "@/components/login-screen"
 import { Navigation } from "@/components/navigation"
-import { loadUserState, saveUserState } from "@/lib/api"
-import {
-  clearSession,
-  ensureLocalSession,
-  readSession,
-  type AuthSession,
-} from "@/lib/auth-session"
+import { loadUserState, logoutAccount, saveUserState } from "@/lib/api"
+import { clearSession, readSession, writeSession, type AuthSession } from "@/lib/auth-session"
 import { activityHasStoredPopularity, enrichActivityWithPopularity } from "@/lib/popularity"
 import { DEFAULT_CITY_LISTS, DEFAULT_PREFERENCES } from "@/lib/default-user-state"
 
@@ -107,33 +103,37 @@ export default function Home() {
   }, [selectedCity, cityLists])
 
   useEffect(() => {
-    setSession(readSession() ?? ensureLocalSession())
+    setSession(readSession())
     setHydrated(true)
   }, [])
 
   useEffect(() => {
-    if (!session?.userId) return
+    if (!session?.token) return
     loadedRef.current = false
     const bootstrap = async () => {
-      const data = await loadUserState(session.userId)
+      const data = await loadUserState(session.token)
       if (data.preferences) setPreferences({ ...DEFAULT_PREFERENCES, ...data.preferences })
       if (data.cityLists && data.cityLists.length > 0) setCityLists(data.cityLists)
       if (data.itinerary) setItinerary(data.itinerary)
       loadedRef.current = true
     }
     bootstrap()
-  }, [session?.userId])
+  }, [session?.token])
 
   useEffect(() => {
-    if (!session?.userId || !loadedRef.current) return
+    if (!session?.token || !loadedRef.current) return
     const id = setTimeout(() => {
-      saveUserState({ userId: session.userId, preferences, cityLists, itinerary })
+      saveUserState(
+        { userId: session.userId, preferences, cityLists, itinerary },
+        session.token
+      )
     }, 600)
     return () => clearTimeout(id)
-  }, [session?.userId, preferences, cityLists, itinerary])
+  }, [session?.token, session?.userId, preferences, cityLists, itinerary])
 
   useEffect(() => {
-    if (currentScreen !== "build" || !activeCity?.activities.length || !hydrated || !loadedRef.current) return
+    if (!session?.token || currentScreen !== "build" || !activeCity?.activities.length || !hydrated || !loadedRef.current)
+      return
     if (!activeCity.activities.some((a) => !activityHasStoredPopularity(a))) return
     let cancelled = false
     ;(async () => {
@@ -147,7 +147,36 @@ export default function Home() {
     return () => {
       cancelled = true
     }
-  }, [currentScreen, activeCity, hydrated])
+  }, [currentScreen, activeCity, hydrated, session?.token])
+
+  const handleAddCity = (cityName: string, country: string) => {
+    const colors = ["#E57373", "#64B5F6", "#81C784", "#FFB74D", "#BA68C8", "#4DD0E1"]
+    const newCity: CityList = {
+      id: Date.now().toString(),
+      name: cityName,
+      country: country,
+      color: colors[cityLists.length % colors.length],
+      activities: [],
+    }
+    setCityLists([...cityLists, newCity])
+  }
+
+  const handleDeleteCity = (cityId: string) => {
+    const city = cityLists.find((c) => c.id === cityId)
+    if (!city) return
+    if (
+      !window.confirm(
+        `Remove "${city.name}" from your board? All saved places in this list will be deleted.`
+      )
+    ) {
+      return
+    }
+    setCityLists((lists) => lists.filter((c) => c.id !== cityId))
+    if (selectedCity?.id === cityId) {
+      setSelectedCity(null)
+      setCurrentScreen("lists")
+    }
+  }
 
   const handleCitySelect = (city: CityList) => {
     setSelectedCity(city)
@@ -188,18 +217,25 @@ export default function Home() {
     setCurrentScreen("itinerary")
   }
 
-  const handleSignOut = useCallback(() => {
+  const handleSignOut = useCallback(async () => {
+    if (session?.token) {
+      try {
+        await logoutAccount(session.token)
+      } catch {
+        /* offline */
+      }
+    }
     clearSession()
-    setSession(ensureLocalSession())
+    setSession(null)
     setPreferences(DEFAULT_PREFERENCES)
     setCityLists(DEFAULT_CITY_LISTS)
     setItinerary(null)
     setSelectedCity(null)
     setCurrentScreen("personality")
     loadedRef.current = false
-  }, [])
+  }, [session?.token])
 
-  if (!hydrated || !session) {
+  if (!hydrated) {
     return (
       <main className="min-h-screen bg-background flex items-center justify-center">
         <p className="text-muted-foreground font-[family-name:var(--font-cursive)] text-xl">Loading…</p>
@@ -207,33 +243,17 @@ export default function Home() {
     )
   }
 
-  const handleAddCity = (cityName: string, country: string) => {
-    const colors = ["#E57373", "#64B5F6", "#81C784", "#FFB74D", "#BA68C8", "#4DD0E1"]
-    const newCity: CityList = {
-      id: Date.now().toString(),
-      name: cityName,
-      country: country,
-      color: colors[cityLists.length % colors.length],
-      activities: [],
-    }
-    setCityLists([...cityLists, newCity])
-  }
-
-  const handleDeleteCity = (cityId: string) => {
-    const city = cityLists.find((c) => c.id === cityId)
-    if (!city) return
-    if (
-      !window.confirm(
-        `Remove "${city.name}" from your board? All saved places in this list will be deleted.`
-      )
-    ) {
-      return
-    }
-    setCityLists((lists) => lists.filter((c) => c.id !== cityId))
-    if (selectedCity?.id === cityId) {
-      setSelectedCity(null)
-      setCurrentScreen("lists")
-    }
+  if (!session) {
+    return (
+      <LoginScreen
+        onLoggedIn={(s) => {
+          writeSession(s)
+          setSession(s)
+          setCurrentScreen("personality")
+          loadedRef.current = false
+        }}
+      />
+    )
   }
 
   return (

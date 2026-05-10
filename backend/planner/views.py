@@ -1,12 +1,26 @@
+from django.contrib.auth import authenticate
+from django.contrib.auth.models import User
+from rest_framework import status
+from rest_framework.authtoken.models import Token
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import UserState
-from .serializers import BuildSerializer, DiscoverSerializer, PopularityLookupSerializer, StateSerializer
+from .serializers import (
+    BuildSerializer,
+    DiscoverSerializer,
+    LoginSerializer,
+    PopularityLookupSerializer,
+    RegisterSerializer,
+    StateSerializer,
+)
 from .services import build_itinerary, discover_places, enrich_discover_with_ai, foursquare_star_popularity
 
 
 class DiscoverView(APIView):
+    permission_classes = [AllowAny]
+
     def post(self, request):
         serializer = DiscoverSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -27,10 +41,7 @@ class DiscoverView(APIView):
 
 
 class PlacePopularityView(APIView):
-    """
-    Resolve popularityScore from Foursquare Places `rating` (~0–10 → 0–100) when FOURSQUARE_API_KEY is set.
-    Otherwise scale the client's `clientRating` (0–5★) to 0–100.
-    """
+    permission_classes = [AllowAny]
 
     def post(self, request):
         ser = PopularityLookupSerializer(data=request.data)
@@ -52,6 +63,8 @@ class PlacePopularityView(APIView):
 
 
 class BuildItineraryView(APIView):
+    permission_classes = [AllowAny]
+
     def post(self, request):
         serializer = BuildSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -59,20 +72,88 @@ class BuildItineraryView(APIView):
         return Response(built)
 
 
-class UserStateView(APIView):
-    def get(self, request, user_id: str):
-        state = UserState.objects.filter(user_id=user_id).first()
-        if not state:
-            return Response({"userId": user_id, "preferences": {}, "cityLists": [], "itinerary": None})
-        return Response(state.payload)
+class RegisterView(APIView):
+    permission_classes = [AllowAny]
 
-    def post(self, request, user_id: str):
+    def post(self, request):
+        ser = RegisterSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        raw_email = ser.validated_data["email"].strip().lower()
+        uname = raw_email[:150]
+        if User.objects.filter(username__iexact=uname).exists() or User.objects.filter(email__iexact=raw_email).exists():
+            return Response({"detail": "An account with this email already exists."}, status=status.HTTP_400_BAD_REQUEST)
+        user = User.objects.create_user(
+            username=uname,
+            email=raw_email,
+            password=ser.validated_data["password"],
+            first_name=(ser.validated_data.get("name") or "").strip()[:150],
+        )
+        token = Token.objects.create(user=user)
+        return Response(
+            {
+                "token": token.key,
+                "userId": str(user.pk),
+                "email": user.email,
+                "name": user.first_name or user.email.split("@")[0],
+            }
+        )
+
+
+class LoginView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        ser = LoginSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        raw_email = ser.validated_data["email"].strip().lower()
+        uname = raw_email[:150]
+        pwd = ser.validated_data["password"]
+        user = authenticate(request, username=uname, password=pwd)
+        if user is None:
+            user = User.objects.filter(email__iexact=raw_email).first()
+            if user is not None:
+                user = authenticate(request, username=user.username, password=pwd)
+        if user is None:
+            return Response({"detail": "Invalid email or password."}, status=status.HTTP_400_BAD_REQUEST)
+        token, _ = Token.objects.get_or_create(user=user)
+        return Response(
+            {
+                "token": token.key,
+                "userId": str(user.pk),
+                "email": user.email,
+                "name": user.first_name or user.email.split("@")[0],
+            }
+        )
+
+
+class LogoutView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        Token.objects.filter(user=request.user).delete()
+        return Response({"ok": True})
+
+
+class UserStateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        state = UserState.objects.filter(user=request.user).first()
+        uid = str(request.user.pk)
+        if not state:
+            return Response({"userId": uid, "preferences": {}, "cityLists": [], "itinerary": None})
+        payload = dict(state.payload)
+        payload.setdefault("userId", uid)
+        return Response(payload)
+
+    def post(self, request):
+        uid = str(request.user.pk)
         incoming = dict(request.data)
-        incoming["userId"] = user_id
+        incoming["userId"] = uid
         serializer = StateSerializer(data=incoming)
         serializer.is_valid(raise_exception=True)
         UserState.objects.update_or_create(
-            user_id=user_id,
+            user=request.user,
             defaults={"payload": serializer.validated_data},
         )
         return Response({"saved": True})

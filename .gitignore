@@ -11,6 +11,10 @@ next.user-config.*
 .env
 .env*.local
 
+# Django local DB (never commit — contains password hashes & auth tokens)
+backend/db.sqlite3
+*.sqlite3
+
 # Common ignores
 node_modules
 .next/

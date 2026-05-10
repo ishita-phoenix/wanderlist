@@ -52,3 +52,14 @@ class StateSerializer(serializers.Serializer):
     preferences = serializers.DictField(child=serializers.BooleanField(), required=False)
     cityLists = serializers.ListField(required=False)
     itinerary = serializers.DictField(required=False, allow_null=True)
+
+
+class RegisterSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    password = serializers.CharField(write_only=True, min_length=8, max_length=128)
+    name = serializers.CharField(max_length=150, required=False, allow_blank=True, default="")
+
+
+class LoginSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    password = serializers.CharField(write_only=True, max_length=128)

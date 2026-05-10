@@ -2,6 +2,8 @@ export type AuthSession = {
   userId: string
   email: string
   name: string
+  /** Django REST Framework Token — send as Authorization: Token … */
+  token: string
   picture?: string
 }
 
@@ -16,22 +18,28 @@ export function readSession(): AuthSession | null {
     const raw =
       localStorage.getItem(SESSION_KEY) ?? localStorage.getItem(SESSION_KEY_LEGACY)
     if (!raw) return null
-    const s = JSON.parse(raw) as AuthSession
-    if (s?.userId && typeof s.userId === "string") return s
+    const s = JSON.parse(raw) as Partial<AuthSession>
+    if (
+      s?.userId &&
+      typeof s.userId === "string" &&
+      s?.email &&
+      typeof s.email === "string" &&
+      s?.token &&
+      typeof s.token === "string"
+    ) {
+      return {
+        userId: s.userId,
+        email: s.email,
+        name: typeof s.name === "string" ? s.name : s.email.split("@")[0],
+        token: s.token,
+        picture: typeof s.picture === "string" ? s.picture : undefined,
+      }
+    }
+    clearSession()
   } catch {
-    /* ignore */
+    clearSession()
   }
   return null
-}
-
-/** Persists an anonymous traveller id so Django `/state/` works without login (login can be wired later). */
-export function ensureLocalSession(): AuthSession {
-  const existing = readSession()
-  if (existing) return existing
-  const id = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`
-  const s: AuthSession = { userId: `anon:${id}`, email: "", name: "Traveler" }
-  writeSession(s)
-  return s
 }
 
 export function writeSession(session: AuthSession): void {

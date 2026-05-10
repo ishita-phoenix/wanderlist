@@ -143,7 +143,7 @@ export function Navigation({ currentScreen, onNavigate, selectedCity, session, o
                     </div>
                   </div>
                   <p className="text-[10px] text-muted-foreground mt-3 uppercase tracking-wider">
-                    Saves to Django under this browser id (login coming later)
+                    Signed in — lists & itinerary sync to your account on the server
                   </p>
                 </div>
                 <DropdownMenuLabel className="sr-only">Account</DropdownMenuLabel>
@@ -153,7 +153,7 @@ export function Navigation({ currentScreen, onNavigate, selectedCity, session, o
                   onClick={onSignOut}
                 >
                   <LogOut className="size-4" />
-                  Reset local profile
+                  Sign out
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

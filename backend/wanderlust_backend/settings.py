@@ -35,6 +35,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "corsheaders",
     "rest_framework",
+    "rest_framework.authtoken",
     "planner",
 ]
 
@@ -81,6 +82,9 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 
 REST_FRAMEWORK = {
     "UNAUTHENTICATED_USER": None,
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.TokenAuthentication",
+    ],
 }
 
 if not DEBUG:
