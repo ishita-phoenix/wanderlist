@@ -1,97 +1,73 @@
 # Wanderlist
 
-Cute scrapbook-style trip planner with:
-- Next.js frontend UI
-- Django API backend
-- Free map/search stack (OSM/Nominatim/Overpass/OpenRouteService)
+Scrapbook-style trip planner: pick interests, build city boards, discover places, and generate day-by-day schedules from Django—with **per-account saves** (lists, preferences, itinerary sync to the server).
 
-## What is implemented
+## What it does
 
-- City activity search using OpenStreetMap data (Overpass + Nominatim geocoding)
-- Discover recommendations weighted by selected interests
-- Itinerary generation based on:
-  - trip dates
-  - wake/sleep hours
-  - activity duration
-  - popularity/rating bias (higher rated places prioritized)
-  - travel-time/proximity optimization
-- Real map rendering with OSM tiles (`react-leaflet`)
+- **Profile** — Toggle travel interests (food, museums, nature, etc.); used when ranking discover results and boosting itinerary picks.
+- **City boards** — Create lists per destination and **search** for venues inside the city (browser-side Photon + Nominatim, bounded by city bbox).
+- **Discover** — Curated suggestions from the Django **`/discover/`** API when online (Photon/Nominatim-backed aggregation server-side); otherwise similar fallback logic runs in the client.
+- **Save places** — Optional **`/popularity/`** scoring (Foursquare-style ratings when configured; otherwise scales star ratings to a 0–100 score).
+- **Build itinerary** — Sends your queued places and dates to Django **`/build/`**, which packs days using wake/sleep windows, visit durations, **popularity + interest** bias, travel times (**OpenRouteService** matrix when a key is set, otherwise **haversine** estimates), and fixed gaps between stops.
+- **Maps** — Leaflet map views with OpenStreetMap tiles by default; optional **MapTiler** for nicer basemaps/geocoding.
 
-## Free APIs Used
+## Accounts & data
 
-- [OpenStreetMap / Nominatim](https://nominatim.org/) (free with usage policy)
-- [Overpass API](https://overpass-api.de/) (free OSM query endpoint)
-- [OpenRouteService](https://openrouteservice.org/) (free tier key, optional but recommended)
-- [Openverse](https://openverse.org/) for freely licensed images
+- **Register / sign in / sign out** — Django users + **token auth**; the SPA stores the token and sends `Authorization: Token …` on **`/state/`** only.
+- **Saved state** — One JSON blob per user (preferences, city lists, itinerary). Works out of the box with SQLite locally; on Render, add **PostgreSQL** + **`DATABASE_URL`** if you need data to survive redeploys.
 
-## 1) Frontend setup (Next.js)
+## Stack
 
-From project root:
+| Layer | Tech |
+|--------|------|
+| UI | Next.js (App Router), React, Tailwind, shadcn-style UI |
+| API | Django + Django REST Framework |
+| Auth | `rest_framework.authtoken` |
+
+## Local development
+
+From the **repo root** (starts Django on `:8000` and Next on `:3000`; Next proxies **`/api`** to Django in dev):
 
 ```bash
 npm install
+python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r backend/requirements.txt
+cp backend/.env.example backend/.env
 cp .env.example .env.local
-# Edit .env.local: set NEXT_PUBLIC_API_BASE_URL and optional NEXT_PUBLIC_MAPTILER_KEY (maps + geocoding)
+cd backend && python manage.py migrate && cd ..
 npm run dev
 ```
 
-App runs at: `http://localhost:3000`
+Open **`http://localhost:3000`**. API directly: **`http://127.0.0.1:8000/api/`** — health check: **`GET /api/health/`**.
 
-**Env split:** browser keys (`NEXT_PUBLIC_*`) live in the **repo root** `.env` or `.env.local`. Django keys live in **`backend/.env`** only — Next.js never reads `backend/.env`.
+**Environment:** Browser-facing vars (`NEXT_PUBLIC_*`) belong in **`.env.local`** at the repo root. Django secrets (`DJANGO_*`, optional API keys) belong in **`backend/.env`** only.
 
-## 2) Backend setup (Django)
+For frontend-only dev (two terminals): **`npm run dev:api`** and **`npm run dev:next`**.
 
-Django’s entry point is **`backend/manage.py`** — always run `manage.py` commands from the **`backend/`** directory (or pass the path explicitly, e.g. `python backend/manage.py` from the repo root).
+## Optional backend keys (`backend/.env`)
 
-From project root:
+| Variable | Effect if set |
+|----------|----------------|
+| `OPENROUTESERVICE_API_KEY` | Driving/walking **duration matrix** between stops for itinerary routing |
+| `FOURSQUARE_API_KEY` | Stronger discover data + server popularity lookups |
+| `OPENAI_API_KEY` | Short “why visit” hints on discover cards and an optional itinerary summary paragraph |
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r backend/requirements.txt
-cp backend/.env.example backend/.env
-cd backend
-python manage.py migrate
-python manage.py runserver 8000
-```
+If these are omitted, the app still runs using free geospatial fallbacks and heuristic ratings.
 
-API runs at: `http://127.0.0.1:8000`
+## Frontend-only map key (repo root `.env.local`)
 
-Health check: `http://127.0.0.1:8000/api/health/`
+| Variable | Effect |
+|----------|--------|
+| `NEXT_PUBLIC_MAPTILER_KEY` | MapTiler tiles / geocoding helpers in the browser |
 
-## 3) OpenRouteService key (recommended)
+Without it, maps use **OSM** raster tiles.
 
-Without ORS key, travel time uses a distance-based fallback estimate.
+## Deploying (Render)
 
-To enable better routing:
-1. Create a free account at [openrouteservice.org](https://openrouteservice.org/)
-2. Generate an API key
-3. Put it in `backend/.env`:
+This repo includes a **`render.yaml`** blueprint idea: separate **web** services for the Django API and the Next.js app, with **`BACKEND_URL`** wiring Next’s server-side **`/api`** rewrite to Django. Set **`DATABASE_URL`** on the backend service when using Render Postgres. Details vary by dashboard—see **`docs/postgresql-on-render.md`** for attaching Postgres.
 
-```env
-OPENROUTESERVICE_API_KEY=your_key_here
-```
+Any static host only needs a built Next export **and** a public API URL via **`NEXT_PUBLIC_API_BASE_URL`**; you don’t need GitHub Pages if everything lives on Render.
 
-Restart Django server after changing env values.
+## Attribution
 
-## 3b) Optional Foursquare + MapTiler
-
-- Add `FOURSQUARE_API_KEY` in `backend/.env` for richer place search data.
-- Add `NEXT_PUBLIC_MAPTILER_KEY` in the **project root** `.env` or `.env.local` (see `.env.example`) for MapTiler basemaps and client geocoding — **not** in `backend/.env`.
-
-If keys are missing:
-- Search falls back to OSM (Overpass).
-- Map tiles fall back to OpenStreetMap.
-
-## 4) Notes for GitHub Pages hosting
-
-GitHub Pages can host only static frontend files. Django API cannot run on GitHub Pages.
-
-Deploy pattern:
-- Host frontend on GitHub Pages (or Vercel/Netlify).
-- Host Django backend separately (Render, Railway, Fly.io, etc.).
-- Set `NEXT_PUBLIC_API_BASE_URL` in the frontend `.env` or `.env.local` to your deployed backend URL.
-
-## 5) Attribution note
-
-Some city magnet images currently use Wikimedia Commons image URLs in UI. For production, keep an attribution page and verify each asset license terms.
+Place imagery may come from Wikimedia, Openverse, Foursquare photos, or OSM-related services—check respective licenses before production reuse.

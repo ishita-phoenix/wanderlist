@@ -18,4 +18,5 @@ backend/db.sqlite3
 # Common ignores
 node_modules
 .next/
+out/
 .DS_Store
