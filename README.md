@@ -44,6 +44,22 @@ Open **`http://localhost:3000`**. API directly: **`http://127.0.0.1:8000/api/`**
 
 For frontend-only dev (two terminals): **`npm run dev:api`** and **`npm run dev:next`**.
 
+### Troubleshooting: “Planning API is not reachable (HTTP 502)”
+
+That means **Next.js is running but Django is not** on `127.0.0.1:8000`, so the dev **`/api` proxy** has nothing to talk to.
+
+1. Use **`npm run dev`** from the repo root (starts **both**). Don’t run only **`npm run dev:next`** unless Django is already up (`npm run dev:api` in another terminal).
+2. On a **new machine**, create the venv and migrate **before** `npm run dev`:
+   ```bash
+   python3 -m venv .venv
+   .venv/bin/pip install -r backend/requirements.txt
+   cd backend && ../.venv/bin/python manage.py migrate && cd ..
+   ```
+   On Windows, use `.venv\Scripts\pip` and `.venv\Scripts\python` instead of `.venv/bin/…`.
+3. Confirm Django responds: open **`http://127.0.0.1:8000/api/health/`** — you should see `{"ok": true}`.
+
+`npm run dev:api` uses **`scripts/dev-api.cjs`**, which prefers **`.venv`** Python when present, then **`python3` / `python`** on your PATH.
+
 ## Optional backend keys (`backend/.env`)
 
 | Variable | Effect if set |
@@ -64,9 +80,12 @@ Without it, maps use **OSM** raster tiles.
 
 ## Deploying (Render)
 
-This repo includes a **`render.yaml`** blueprint idea: separate **web** services for the Django API and the Next.js app, with **`BACKEND_URL`** wiring Next’s server-side **`/api`** rewrite to Django. Set **`DATABASE_URL`** on the backend service when using Render Postgres. Details vary by dashboard—see **`docs/postgresql-on-render.md`** for attaching Postgres.
+Blueprint **`render.yaml`**: **backend** service + **Next** service. The Next **build** sets **`NEXT_PUBLIC_API_BASE_URL`** from **`BACKEND_URL`** (`https://…onrender.com/api`) so the **browser calls Django over HTTPS from any device** (no reliance on same-host `/api` rewrites in production). Django enables **`CORS_ALLOW_ALL_ORIGINS`** for that cross-origin traffic.
 
-Any static host only needs a built Next export **and** a public API URL via **`NEXT_PUBLIC_API_BASE_URL`**; you don’t need GitHub Pages if everything lives on Render.
+If you created services manually (no Blueprint), set on the **frontend** service at **build** time:  
+`NEXT_PUBLIC_API_BASE_URL=https://<your-backend-name>.onrender.com/api`
+
+Set **`DATABASE_URL`** on the backend when using Render Postgres — see **`docs/postgresql-on-render.md`**.
 
 ## Attribution
 

@@ -25,25 +25,26 @@ services:
       - key: CORS_ALLOW_ALL_ORIGINS
         value: "1"
 
-  # ─── Next.js (proxies /api → Django via BACKEND_URL) ─────────
+  # ─── Next.js ─────────────────────────────────────────────────
+  # Browser must call Django by absolute HTTPS URL (works from every device).
+  # NEXT_PUBLIC_* is inlined at build — derived from BACKEND_URL here.
   - type: web
     name: wanderlust-web
     runtime: node
     plan: free
     rootDir: .
-    buildCommand: npm ci && npm run build
+    buildCommand: npm ci && BACKEND_TRIM=$(printf '%s' "$BACKEND_URL" | sed 's|/*$||') && NEXT_PUBLIC_API_BASE_URL="$BACKEND_TRIM/api" npm run build
     startCommand: npm run start
     healthCheckPath: /
     envVars:
       - key: NODE_VERSION
         value: "22.12.0"
-      # Server-side rewrite target (no trailing slash). Linked from backend after first deploy.
+      # Backend origin (no trailing slash). Used at build time for NEXT_PUBLIC_API_BASE_URL.
       - key: BACKEND_URL
         fromService:
           type: web
           name: wanderlust-backend
           envVarKey: RENDER_EXTERNAL_URL
-      # Browser calls same-origin /api (default). Do not set NEXT_PUBLIC_API_BASE_URL unless you know why.
 
 # ─── Optional persistent DB (recommended for saved lists / state) ─────────
 # Uncomment in Render dashboard: create PostgreSQL → copy Internal/External DATABASE_URL

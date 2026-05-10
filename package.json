@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "concurrently -k -n django,next -c magenta,blue \"npm run dev:api\" \"wait-on -t 120000 -i 300 tcp:127.0.0.1:8000 && npm run dev:next\"",
     "dev:next": "next dev",
-    "dev:api": "cd backend && ../.venv/bin/python manage.py runserver 127.0.0.1:8000",
+    "dev:api": "node scripts/dev-api.cjs",
     "dev:all": "npm run dev",
     "build": "next build",
     "start": "next start -H 0.0.0.0 -p ${PORT:-3000}",

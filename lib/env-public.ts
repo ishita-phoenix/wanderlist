@@ -6,8 +6,9 @@
 
 export const publicEnv = {
   /**
-   * Same-origin `/api` (default) is rewritten to Django by Next when not using static export (see next.config.mjs).
-   * For `NEXT_STATIC_EXPORT=1`, set this to your live API, e.g. `https://your-server.example.com/api`.
+   * - Local dev: omit → `/api` (Next rewrites to Django via next.config.mjs + BACKEND_URL / localhost).
+   * - Production (e.g. Render): set at build to `https://your-django-service.onrender.com/api` so every
+   *   browser talks to Django directly (CORS on Django). Same-origin `/api` proxy is unreliable across machines if rewrites baked wrong.
    */
   apiBaseUrl:
     process.env.NEXT_PUBLIC_API_BASE_URL?.trim() ||
